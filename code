@@ -1,0 +1,327 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Servo.h>
+
+/* =========================
+   OLED
+========================= */
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+
+Adafruit_SSD1306 display(
+  SCREEN_WIDTH,
+  SCREEN_HEIGHT,
+  &Wire,
+  -1
+);
+
+/* =========================
+   Motor Driver (L298N)
+========================= */
+#define enA 10
+#define in1 9
+#define in2 8
+#define in3 7
+#define in4 6
+#define enB 5
+
+/* =========================
+   IR Sensors
+========================= */
+#define IR_RIGHT A4
+#define IR_LEFT  A5
+
+/* =========================
+   Front Ultrasonic
+========================= */
+#define FRONT_TRIG 12
+#define FRONT_ECHO 11
+
+/* =========================
+   Side Ultrasonics
+========================= */
+#define LEFT_TRIG  A3
+#define LEFT_ECHO  3
+
+#define RIGHT_TRIG A1
+#define RIGHT_ECHO A2
+
+/* =========================
+   Button
+========================= */
+#define BUTTON_PIN 2
+
+/* =========================
+   Tail Servo
+========================= */
+Servo tailServo;
+#define TAIL_PIN A0
+
+/* =========================
+   Thresholds
+========================= */
+const long FRONT_THRESHOLD = 10;
+const long SIDE_THRESHOLD = 15;
+
+/* =========================
+   Variables
+========================= */
+unsigned long lastBlinkTime = 0;
+unsigned long lastWagTime = 0;
+
+bool wagLeft = false;
+bool eyesClosed = false;
+
+enum RobotState {
+  IDLE,
+  LINE_FOLLOW,
+  OBJECT_TRACK
+};
+
+RobotState currentState = IDLE;
+
+/* ==================================================
+   SETUP
+================================================== */
+void setup() {
+
+  Serial.begin(9600);
+
+  pinMode(IR_LEFT, INPUT);
+  pinMode(IR_RIGHT, INPUT);
+
+  pinMode(FRONT_TRIG, OUTPUT);
+  pinMode(FRONT_ECHO, INPUT);
+
+  pinMode(LEFT_TRIG, OUTPUT);
+  pinMode(LEFT_ECHO, INPUT);
+
+  pinMode(RIGHT_TRIG, OUTPUT);
+  pinMode(RIGHT_ECHO, INPUT);
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  pinMode(enA, OUTPUT);
+  pinMode(enB, OUTPUT);
+
+  pinMode(in1, OUTPUT);
+  pinMode(in2, OUTPUT);
+  pinMode(in3, OUTPUT);
+  pinMode(in4, OUTPUT);
+
+  analogWrite(enA, 180);
+  analogWrite(enB, 180);
+
+  tailServo.attach(TAIL_PIN);
+  tailServo.write(90);
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    while (true);
+  }
+
+  display.clearDisplay();
+  display.display();
+}
+
+/* ==================================================
+   LOOP
+================================================== */
+void loop() {
+
+  checkButton();
+
+  long frontDist = readDistance(FRONT_TRIG, FRONT_ECHO);
+  long leftDist = readDistance(LEFT_TRIG, LEFT_ECHO);
+  long rightDist = readDistance(RIGHT_TRIG, RIGHT_ECHO);
+
+  int irLeft = digitalRead(IR_LEFT);
+  int irRight = digitalRead(IR_RIGHT);
+
+  bool objectDetected =
+      (frontDist < FRONT_THRESHOLD) ||
+      (leftDist < SIDE_THRESHOLD) ||
+      (rightDist < SIDE_THRESHOLD);
+
+  /* =========================
+     OBJECT TRACKING MODE
+  ========================= */
+  if (objectDetected) {
+
+    currentState = OBJECT_TRACK;
+
+    if (leftDist < SIDE_THRESHOLD) {
+      turnRight();
+    }
+    else if (rightDist < SIDE_THRESHOLD) {
+      turnLeft();
+    }
+    else if (frontDist < FRONT_THRESHOLD) {
+      moveForward();
+    }
+
+    displayEyesOpen();
+    wagTail();
+  }
+
+  /* =========================
+     LINE FOLLOW MODE
+  ========================= */
+  else {
+
+    currentState = LINE_FOLLOW;
+
+    if (irLeft == 0 && irRight == 0) {
+      moveForward();
+    }
+    else if (irLeft == 1 && irRight == 0) {
+      turnRight();
+    }
+    else if (irLeft == 0 && irRight == 1) {
+      turnLeft();
+    }
+    else {
+      stopMotors();
+    }
+
+    idleBlink();
+  }
+
+  delay(50);
+}
+
+/* ==================================================
+   DISTANCE FUNCTIONS
+================================================== */
+long readDistance(int trigPin, int echoPin) {
+
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH);
+
+  long distance = duration * 0.034 / 2;
+
+  return distance;
+}
+
+/* ==================================================
+   MOTOR FUNCTIONS
+================================================== */
+void moveForward() {
+
+  digitalWrite(in1, HIGH);
+  digitalWrite(in2, LOW);
+
+  digitalWrite(in3, LOW);
+  digitalWrite(in4, HIGH);
+}
+
+void stopMotors() {
+
+  digitalWrite(in1, LOW);
+  digitalWrite(in2, LOW);
+
+  digitalWrite(in3, LOW);
+  digitalWrite(in4, LOW);
+}
+
+void turnLeft() {
+
+  digitalWrite(in1, HIGH);
+  digitalWrite(in2, LOW);
+
+  digitalWrite(in3, HIGH);
+  digitalWrite(in4, LOW);
+}
+
+void turnRight() {
+
+  digitalWrite(in1, LOW);
+  digitalWrite(in2, HIGH);
+
+  digitalWrite(in3, LOW);
+  digitalWrite(in4, HIGH);
+}
+
+/* ==================================================
+   SERVO
+================================================== */
+void wagTail() {
+
+  if (millis() - lastWagTime > 200) {
+
+    wagLeft = !wagLeft;
+
+    if (wagLeft)
+      tailServo.write(120);
+    else
+      tailServo.write(60);
+
+    lastWagTime = millis();
+  }
+}
+
+/* ==================================================
+   OLED EYES
+================================================== */
+void displayEyesOpen() {
+
+  display.clearDisplay();
+
+  display.fillCircle(40, 32, 10, SSD1306_WHITE);
+  display.fillCircle(88, 32, 10, SSD1306_WHITE);
+
+  display.display();
+}
+
+void displayEyesClosed() {
+
+  display.clearDisplay();
+
+  display.drawLine(30, 32, 50, 32, SSD1306_WHITE);
+  display.drawLine(78, 32, 98, 32, SSD1306_WHITE);
+
+  display.display();
+}
+
+void idleBlink() {
+
+  if (millis() - lastBlinkTime > 3000) {
+
+    displayEyesClosed();
+    delay(150);
+
+    displayEyesOpen();
+
+    lastBlinkTime = millis();
+  }
+}
+
+/* ==================================================
+   BUTTON
+================================================== */
+void checkButton() {
+
+  if (digitalRead(BUTTON_PIN) == LOW) {
+
+    display.clearDisplay();
+
+    display.setTextSize(2);
+    display.setTextColor(SSD1306_WHITE);
+
+    display.setCursor(10, 25);
+    display.println("EXP CHECK");
+
+    display.display();
+
+    Serial.println("EXP CHECK");
+
+    delay(300);
+  }
+}
