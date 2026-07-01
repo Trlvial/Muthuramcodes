@@ -1,0 +1,178 @@
+# Instant Messaging Service using Python and MySQL
+
+import os
+import mysql.connector
+
+# Connect to MySQL
+mydb = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    password="Muthuram123#"
+)
+
+mycursor = mydb.cursor()
+
+# Create database if it doesn't exist
+mycursor.execute("CREATE DATABASE IF NOT EXISTS service")
+mycursor.execute("USE service")
+
+# Create table
+mycursor.execute("""
+CREATE TABLE IF NOT EXISTS ims(
+    msg_id VARCHAR(10) PRIMARY KEY,
+    rname VARCHAR(30),
+    sname VARCHAR(30),
+    rmail VARCHAR(50),
+    smail VARCHAR(50),
+    msg VARCHAR(250)
+)
+""")
+
+
+def add_msg():
+    cursor = mydb.cursor()
+
+    msg_id = input("Enter Message ID: ")
+    rname = input("Enter Receiver Name: ")
+    sname = input("Enter Sender Name: ")
+    rmail = input("Enter Receiver Email: ")
+    smail = input("Enter Sender Email: ")
+    msg = input("Enter Message: ")
+
+    sql = """
+    INSERT INTO ims
+    (msg_id,rname,sname,rmail,smail,msg)
+    VALUES(%s,%s,%s,%s,%s,%s)
+    """
+
+    values = (msg_id, rname, sname, rmail, smail, msg)
+
+    try:
+        cursor.execute(sql, values)
+        mydb.commit()
+        print("\nMessage Added Successfully.")
+    except mysql.connector.Error as err:
+        print(err)
+
+
+def search_msg():
+
+    cursor = mydb.cursor()
+
+    print("\nSearch By")
+    print("1. Message ID")
+    print("2. Sender Name")
+    print("3. Receiver Name")
+    print("4. Display All")
+
+    ch = int(input("Enter Choice: "))
+
+    if ch == 1:
+
+        msgid = input("Enter Message ID: ")
+
+        cursor.execute(
+            "SELECT * FROM ims WHERE msg_id=%s",
+            (msgid,)
+        )
+
+    elif ch == 2:
+
+        sender = input("Enter Sender Name: ")
+
+        cursor.execute(
+            "SELECT * FROM ims WHERE sname=%s",
+            (sender,)
+        )
+
+    elif ch == 3:
+
+        receiver = input("Enter Receiver Name: ")
+
+        cursor.execute(
+            "SELECT * FROM ims WHERE rname=%s",
+            (receiver,)
+        )
+
+    elif ch == 4:
+
+        cursor.execute("SELECT * FROM ims")
+
+    else:
+        print("Invalid Choice")
+        return
+
+    records = cursor.fetchall()
+
+    if len(records) == 0:
+        print("\nNo Records Found.\n")
+    else:
+        print("\n-----------------------------")
+        for row in records:
+            print("Message ID :", row[0])
+            print("Receiver   :", row[1])
+            print("Sender     :", row[2])
+            print("R Email    :", row[3])
+            print("S Email    :", row[4])
+            print("Message    :", row[5])
+            print("-----------------------------")
+
+
+def delete_msg():
+
+    cursor = mydb.cursor()
+
+    msgid = input("Enter Message ID to Delete: ")
+
+    cursor.execute(
+        "DELETE FROM ims WHERE msg_id=%s",
+        (msgid,)
+    )
+
+    mydb.commit()
+
+    if cursor.rowcount > 0:
+        print("Message Deleted Successfully.")
+    else:
+        print("Message Not Found.")
+
+
+def menu():
+
+    while True:
+
+        print("\n==============================")
+        print(" INSTANT MESSAGING SERVICE ")
+        print("==============================")
+        print("1. Add Message")
+        print("2. Search Message")
+        print("3. Delete Message")
+        print("4. Exit")
+
+        try:
+
+            choice = int(input("Enter Choice: "))
+
+            if choice == 1:
+                add_msg()
+
+            elif choice == 2:
+                search_msg()
+
+            elif choice == 3:
+                delete_msg()
+
+            elif choice == 4:
+                print("Thank You")
+                break
+
+            else:
+                print("Invalid Choice")
+
+        except Exception as e:
+            print("Error:", e)
+
+
+menu()
+
+mydb.close()
